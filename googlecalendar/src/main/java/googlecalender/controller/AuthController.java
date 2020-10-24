@@ -1,22 +1,20 @@
 package googlecalender.controller;
 
-import com.google.api.client.auth.oauth2.AuthorizationCodeRequestUrl;
 import com.google.api.client.auth.oauth2.Credential;
 import com.google.api.client.auth.oauth2.TokenResponse;
 import com.google.api.client.googleapis.auth.oauth2.GoogleAuthorizationCodeFlow;
 import com.google.api.client.googleapis.auth.oauth2.GoogleClientSecrets;
-import com.google.api.client.googleapis.auth.oauth2.GoogleCredential;
 import com.google.api.client.googleapis.javanet.GoogleNetHttpTransport;
 import com.google.api.client.http.HttpTransport;
-import com.google.api.client.http.javanet.NetHttpTransport;
 import com.google.api.client.json.JsonFactory;
 import com.google.api.client.json.jackson2.JacksonFactory;
-import com.google.api.client.util.DateTime;
-import com.google.api.services.calendar.Calendar;
-import com.google.api.services.calendar.CalendarScopes;
-import com.google.api.services.calendar.model.Event;
+import googlecalender.dto.ErrorDTO;
 import googlecalender.dto.GoogleToken;
+import googlecalender.entity.TokenInfo;
+import googlecalender.exception.CalendarException;
+import googlecalender.model.ClientSecret;
 import googlecalender.service.CredentialsService;
+import googlecalender.service.EventService;
 import googlecalender.service.TokenService;
 import googlecalender.utils.CredentialUtils;
 import org.apache.commons.logging.Log;
@@ -31,11 +29,6 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.view.RedirectView;
 
 import javax.servlet.http.HttpServletRequest;
-import java.io.IOException;
-import java.util.Collections;
-import java.util.Date;
-import java.util.HashSet;
-import java.util.Set;
 
 
 @RestController
@@ -44,98 +37,56 @@ public class AuthController {
 
     private final static Log logger = LogFactory.getLog(AuthController.class);
 
+    private static final JsonFactory JSON_FACTORY = JacksonFactory.getDefaultInstance();
     private static final String APPLICATION_NAME = "";
     private HttpTransport httpTransport;
-    private static final JsonFactory JSON_FACTORY = JacksonFactory.getDefaultInstance();
     private static com.google.api.services.calendar.Calendar client;
-
-    String redirectURI = "http://localhost:8090/auth/google";
 
     GoogleClientSecrets clientSecrets;
     GoogleAuthorizationCodeFlow flow;
     Credential credential;
-//
-//    @Value("${google.client.client-id}")
-//    private String clientId;
-//    @Value("${google.client.client-secret}")
-//    private String clientSecret;
-//    @Value("${google.client.redirectUri}")
-//    private String redirectURI;
 
     @Autowired
     private CredentialsService credentialsService;
 
-    private Set<Event> events = new HashSet<>();
-
-    final DateTime date1 = new DateTime("2017-05-05T16:30:00.000+05:30");
-//    public static String refreshToken = "";
-    final DateTime date2 = new DateTime(new Date());
+    @Autowired
+    private EventService eventService;
 
     @Autowired
     private TokenService tokenService;
 
-    public void setEvents(Set<Event> events) {
-        this.events = events;
-    }
-
     @RequestMapping(value = "/google", method = RequestMethod.GET)
-    public RedirectView googleConnectionStatus(HttpServletRequest request) throws Exception {
-        GoogleToken token = tokenService.getToken("kshahi");
-        if (null == token.getRefreshToken() || token.getRefreshToken().isEmpty()) {
-            return new RedirectView(authorize());
+    public RedirectView googleConnectionStatus(HttpServletRequest request, @RequestParam String userId) throws Exception {
+        TokenInfo tokenInfo = tokenService.getTokenInfo(userId);
+        if (null == tokenInfo.getRefreshToken() || tokenInfo.getRefreshToken().isEmpty()) {
+            return new RedirectView(this.credentialsService.authorize(tokenInfo));
         } else {
-            return new RedirectView("/auth/success");
+            return new RedirectView("/auth/success?state=" + tokenInfo.getUserId());
         }
     }
 
 
-    private Credential getCredentialsFromToken(GoogleToken googleToken, String clientId, String clientSecret) throws IOException {
-        HttpTransport transport = new NetHttpTransport();
-        JacksonFactory jsonFactory = new JacksonFactory();
-        return new GoogleCredential.Builder()
-                .setClientSecrets(clientId, clientSecret)
-                .setJsonFactory(jsonFactory).setTransport(transport).build()
-                .setAccessToken(googleToken.getToken())
-                .setRefreshToken(googleToken.getRefreshToken());
-    }
-
     @RequestMapping(value = "/success", method = RequestMethod.GET)
-    public ResponseEntity<String> success(HttpServletRequest request) throws Exception {
+    public ResponseEntity<String> success(HttpServletRequest request, @RequestParam String state) {
         String message;
         try {
-            GoogleToken token = tokenService.getToken("kshahi");
-            GoogleClientSecrets clientSecrets = this.credentialsService.getClientSecrets();
-            String newToken = CredentialUtils.getNewToken(token.getRefreshToken(), clientSecrets.getWeb().getClientId(), clientSecrets.getWeb().getClientSecret());
-            token.setToken(newToken);
+            TokenInfo tokenInfo = tokenService.getTokenInfo(state);
+            String newToken = CredentialUtils.getUpdatedToken(tokenInfo.getRefreshToken(), CredentialUtils.getClientSecret());
+            tokenInfo.setToken(newToken);
             httpTransport = GoogleNetHttpTransport.newTrustedTransport();
-            Credential credentialsFromToken = getCredentialsFromToken(token, clientSecrets.getWeb().getClientId(), clientSecrets.getWeb().getClientSecret());
+            ClientSecret clientSecret = CredentialUtils.getClientSecret();
+            Credential credentialsFromToken = CredentialUtils.getCredentialsFromToken(tokenInfo, clientSecret);
             client = new com.google.api.services.calendar.Calendar.Builder(httpTransport, JSON_FACTORY, credentialsFromToken)
                     .setApplicationName(APPLICATION_NAME).build();
-            message = getEvents(client);
+            message = this.eventService.getEvents(client);
         } catch (Exception e) {
-            logger.warn("Exception while handling OAuth2 callback (" + e.getMessage() + ")."
+            logger.error("Exception while handling OAuth2 callback (" + e.getMessage() + ")."
                     + " Redirecting to google connection status page.");
-            message = "Exception while handling OAuth2 callback (" + e.getMessage() + ")."
-                    + " Redirecting to google connection status page.";
+            throw new CalendarException(new ErrorDTO(e.getMessage(), HttpStatus.INTERNAL_SERVER_ERROR.value(), "Internal Server Messagae"));
         }
         return new ResponseEntity<>(message, HttpStatus.OK);
     }
 
-
-    private String authorize() throws Exception {
-        AuthorizationCodeRequestUrl authorizationUrl;
-        if (flow == null) {
-            httpTransport = GoogleNetHttpTransport.newTrustedTransport();
-            flow = new GoogleAuthorizationCodeFlow.Builder(httpTransport, JSON_FACTORY, this.credentialsService.getClientSecrets(),
-                    Collections.singleton(CalendarScopes.CALENDAR))
-                    .setAccessType("offline")
-                    .setApprovalPrompt("force")
-                    .build();
-        }
-        authorizationUrl = flow.newAuthorizationUrl().setRedirectUri(redirectURI);
-        System.out.println("cal authorizationUrl->" + authorizationUrl);
-        return authorizationUrl.build();
-    }
 
     @RequestMapping(value = "/google", method = RequestMethod.GET, params = "code")
     public ResponseEntity<String> oauth2Callback(@RequestParam(value = "code") String code) {
@@ -143,37 +94,20 @@ public class AuthController {
         String message;
         String userId = "kshahi";
         try {
-            String redirectURI = "http://localhost:8090/auth/google";
-            TokenResponse response = flow.newTokenRequest(code).setRedirectUri(redirectURI).execute();
+            TokenResponse response = flow.newTokenRequest(code).setRedirectUri(CredentialUtils.getClientSecret().getRedirectUrls().get(0)).execute();
             credential = flow.createAndStoreCredential(response, "userID");
             if (null != credential.getRefreshToken()) {
                 this.tokenService.updateToken(new GoogleToken(credential.getAccessToken(), credential.getRefreshToken(), userId));
             }
             client = new com.google.api.services.calendar.Calendar.Builder(httpTransport, JSON_FACTORY, credential)
                     .setApplicationName(APPLICATION_NAME).build();
-            message = getEvents(client);
+            message = this.eventService.getEvents(client);
 
         } catch (Exception e) {
             logger.warn("Exception while handling OAuth2 callback (" + e.getMessage() + ")."
                     + " Redirecting to google connection status page.");
-            message = "Exception while handling OAuth2 callback (" + e.getMessage() + ")."
-                    + " Redirecting to google connection status page.";
+            throw new CalendarException(new ErrorDTO(e.getMessage(), HttpStatus.INTERNAL_SERVER_ERROR.value(), "Internal Server Messagae"));
         }
-
-        System.out.println("cal message:" + message);
         return new ResponseEntity<>(message, HttpStatus.OK);
-    }
-
-    public String getEvents(Calendar calendar) throws IOException {
-        com.google.api.services.calendar.model.Events eventList;
-        String message;
-        Calendar.Events events = calendar.events();
-        eventList = events.list("primary").setTimeMin(date1).setTimeMax(date2).execute();
-        System.out.println("My:" + eventList.getItems());
-        return eventList.getItems().toString();
-    }
-
-    public Set<Event> getEvents() throws IOException {
-        return this.events;
     }
 }

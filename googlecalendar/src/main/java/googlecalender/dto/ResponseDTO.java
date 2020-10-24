@@ -1,7 +1,6 @@
 package googlecalender.dto;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
-import googlecalender.service.ErrorDTO;
 
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class ResponseDTO {

@@ -14,6 +14,7 @@ import org.springframework.stereotype.Service;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
 
 @Service
@@ -61,6 +62,17 @@ public class EventService {
             System.out.println(jsonError);
         }
         return new ResponseDTO(null);
+    }
+
+    public String getEvents(Calendar calendar) throws IOException {
+        final DateTime date1 = new DateTime("2017-05-05T16:30:00.000+05:30");
+        final DateTime date2 = new DateTime(new Date());
+        com.google.api.services.calendar.model.Events eventList;
+        String message;
+        Calendar.Events events = calendar.events();
+        eventList = events.list("primary").setTimeMin(date1).setTimeMax(date2).execute();
+        System.out.println("My:" + eventList.getItems());
+        return eventList.getItems().toString();
     }
 
     public ResponseDTO createEvent(UserEventDTO userEvent) {

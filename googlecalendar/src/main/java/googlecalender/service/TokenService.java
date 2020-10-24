@@ -3,6 +3,8 @@ package googlecalender.service;
 
 import googlecalender.dao.TokenDAO;
 import googlecalender.dto.GoogleToken;
+import googlecalender.entity.TokenInfo;
+import googlecalender.repository.TokenRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -15,6 +17,16 @@ public class TokenService {
     @Autowired
     private TokenDAO tokenDAO;
 
+    @Autowired
+    private TokenRepository tokenRepository;
+
+    public TokenInfo getTokenInfo(String userId) {
+        return tokenRepository.findByUserId(userId);
+    }
+
+    public TokenInfo updateTokenInfo(TokenInfo tokenInfo) {
+        return tokenRepository.save(tokenInfo);
+    }
 
     public GoogleToken getToken(String userId) {
         Map<String, Object> token = this.tokenDAO.getToken(userId);

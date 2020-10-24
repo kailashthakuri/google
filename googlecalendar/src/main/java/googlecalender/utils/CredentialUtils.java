@@ -9,6 +9,7 @@ import com.google.api.client.googleapis.auth.oauth2.GoogleClientSecrets;
 import com.google.api.client.googleapis.auth.oauth2.GoogleCredential;
 import com.google.api.client.googleapis.auth.oauth2.GoogleRefreshTokenRequest;
 import com.google.api.client.googleapis.javanet.GoogleNetHttpTransport;
+import com.google.api.client.http.HttpTransport;
 import com.google.api.client.http.javanet.NetHttpTransport;
 import com.google.api.client.json.JsonFactory;
 import com.google.api.client.json.jackson2.JacksonFactory;
@@ -16,6 +17,7 @@ import com.google.api.client.util.store.DataStoreFactory;
 import com.google.api.client.util.store.MemoryDataStoreFactory;
 import com.google.api.services.calendar.CalendarScopes;
 import googlecalender.GoogleCalendarApplication;
+import googlecalender.entity.TokenInfo;
 import googlecalender.model.ClientSecret;
 
 import java.io.FileNotFoundException;
@@ -42,7 +44,7 @@ public class CredentialUtils {
      * If modifying these scopes, delete your previously saved tokens/ folder.
      */
     private static final List<String> SCOPES = Collections.singletonList(CalendarScopes.CALENDAR);
-    private static final String CREDENTIALS_FILE_PATH = "/credentials1.json";
+    private static final String CREDENTIALS_FILE_PATH = "/client_secret.json";
 
     private static Credential getCredentials(
             final NetHttpTransport HTTP_TRANSPORT) throws IOException {
@@ -68,7 +70,7 @@ public class CredentialUtils {
                 .authorize("user");
     }
 
-    public ClientSecret getClientSecret() throws IOException {
+    public static ClientSecret getClientSecret() throws IOException {
         InputStream in = GoogleCalendarApplication.class
                 .getResourceAsStream(CREDENTIALS_FILE_PATH);
         if (in == null) {
@@ -103,6 +105,17 @@ public class CredentialUtils {
 //        credential.setAccessToken(getNewToken(refreshToken, clientId, clientSecret));
 //        credential.setRefreshToken(refreshToken);
         return credential;
+    }
+
+    public static Credential getCredentialsFromToken(TokenInfo tokenInfo, ClientSecret clientSecret) {
+        HttpTransport transport = new NetHttpTransport();
+        JacksonFactory jsonFactory = new JacksonFactory();
+        return new GoogleCredential.Builder()
+                .setClientSecrets(clientSecret.getClientId(), clientSecret.getClientSecret())
+                .setJsonFactory(jsonFactory).setTransport(transport).build()
+                .setAccessToken(tokenInfo.getToken())
+                .setExpirationTimeMilliseconds(tokenInfo.getExpiredAt())
+                .setRefreshToken(tokenInfo.getRefreshToken());
     }
 
     public static String getNewToken(String refreshToken, String clientId, String clientSecret) throws IOException {

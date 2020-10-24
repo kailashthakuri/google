@@ -14,6 +14,11 @@ import com.google.api.client.json.jackson2.JacksonFactory;
 import com.google.api.client.util.store.DataStoreFactory;
 import com.google.api.services.calendar.CalendarScopes;
 import googlecalender.GoogleCalendarApplication;
+import googlecalender.entity.TokenInfo;
+import googlecalender.model.ClientSecret;
+import googlecalender.utils.CredentialUtils;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -27,18 +32,15 @@ import java.util.List;
 @Service
 public class CredentialsService {
 
+    private final static Log logger = LogFactory.getLog(CredentialsService.class);
+
     @Autowired
     private DataStoreFactory storeFactory;
 
     NetHttpTransport httpTransport;
-    GoogleClientSecrets clientSecrets;
     GoogleAuthorizationCodeFlow flow;
-    Credential credential;
-
-    private static final String APPLICATION_NAME = "Calendar";
     private static final JsonFactory JSON_FACTORY = JacksonFactory
             .getDefaultInstance();
-    private static final String TOKENS_DIRECTORY_PATH = "tokens";
 
     /**
      * Global instance of the scopes required by this quickstart.
@@ -55,8 +57,24 @@ public class CredentialsService {
             throw new FileNotFoundException(
                     "Resource not found: " + CREDENTIALS_FILE_PATH);
         }
-       return  GoogleClientSecrets
+        return GoogleClientSecrets
                 .load(JSON_FACTORY, new InputStreamReader(in));
+    }
+
+    public String authorize(TokenInfo tokenInfo) throws Exception {
+        AuthorizationCodeRequestUrl authorizationUrl;
+        ClientSecret secret = CredentialUtils.getClientSecret();
+        if (flow == null) {
+            httpTransport = GoogleNetHttpTransport.newTrustedTransport();
+            flow = new GoogleAuthorizationCodeFlow.Builder(httpTransport, JSON_FACTORY, this.getClientSecrets(),
+                    Collections.singleton(CalendarScopes.CALENDAR))
+                    .setAccessType("offline")
+                    .setApprovalPrompt("force")
+                    .build();
+        }
+        authorizationUrl = flow.newAuthorizationUrl().setRedirectUri(secret.getRedirectUrls().get(0));
+        logger.info("Authorization URL : " + authorizationUrl);
+        return authorizationUrl.build() + "&state=" + tokenInfo.getUserId();
     }
 
     public String authorize(HttpTransport httpTransport) throws Exception {
@@ -70,10 +88,6 @@ public class CredentialsService {
             }
             GoogleClientSecrets clientSecrets = GoogleClientSecrets
                     .load(JSON_FACTORY, new InputStreamReader(in));
-//            GoogleClientSecrets.Details web = new GoogleClientSecrets.Details();
-//            web.setClientId(clientId);
-//            web.setClientSecret(clientSecret);
-//            clientSecrets = new GoogleClientSecrets().setWeb(web);
             httpTransport = GoogleNetHttpTransport.newTrustedTransport();
             flow = new GoogleAuthorizationCodeFlow.Builder(httpTransport, JSON_FACTORY, clientSecrets,
                     Collections.singleton(CalendarScopes.CALENDAR)).build();
