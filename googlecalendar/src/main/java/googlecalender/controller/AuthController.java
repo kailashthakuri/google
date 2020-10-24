@@ -89,15 +89,13 @@ public class AuthController {
 
 
     @RequestMapping(value = "/google", method = RequestMethod.GET, params = "code")
-    public ResponseEntity<String> oauth2Callback(@RequestParam(value = "code") String code) {
-        com.google.api.services.calendar.model.Events eventList;
+    public ResponseEntity<String> oauth2Callback(@RequestParam String code, @RequestParam String state) {
         String message;
-        String userId = "kshahi";
         try {
             TokenResponse response = flow.newTokenRequest(code).setRedirectUri(CredentialUtils.getClientSecret().getRedirectUrls().get(0)).execute();
             credential = flow.createAndStoreCredential(response, "userID");
             if (null != credential.getRefreshToken()) {
-                this.tokenService.updateToken(new GoogleToken(credential.getAccessToken(), credential.getRefreshToken(), userId));
+                this.tokenService.updateToken(new GoogleToken(credential.getAccessToken(), credential.getRefreshToken(), state));
             }
             client = new com.google.api.services.calendar.Calendar.Builder(httpTransport, JSON_FACTORY, credential)
                     .setApplicationName(APPLICATION_NAME).build();
